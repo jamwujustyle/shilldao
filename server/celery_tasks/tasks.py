@@ -70,10 +70,9 @@ def get_slot0_from_blockchain(w3, state_view_address, pool_id):
 @shared_task
 def fetch_shill_price():
 
-    STATE_VIEW_ADDRESS = "0xe1dd9c3fa50edb962e442f60dfbc432e24537e4c"
-    POOL_ID = "0xdcb7fb4f33aec4a3a9708e1634e53c30ba51d01fd78bd04693a11d5a02c0cd52"
-    RPC_URL = "https://sepolia.infura.io/v3/9e46cd5c5c944f31a9738202e83c0e0b"
-
+    STATE_VIEW_ADDRESS = "PLACEHOLDER"
+    POOL_ID = "PLACEHOLDER"
+    RPC_URL = "https://sepolia.infura.io/v3/PLACEHOLDER"
     TOKEN0_DECIMALS = 18
     TOKEN1_DECIMALS = 18  # Shill Token
 

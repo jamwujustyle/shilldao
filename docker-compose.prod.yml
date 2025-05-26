@@ -2,7 +2,7 @@
 services:
   backend:
     # FIXED: Use environment variable for image tag
-    image: ${BACKEND_IMAGE:-codebuddha/shillers-backend:latest}
+    image: ${BACKEND_IMAGE:-PLACEHOLDER}
     command: >
       sh -c "
             /venv/bin/python manage.py wait_for_db &&
@@ -24,7 +24,7 @@ services:
 
   frontend:
     # FIXED: Use environment variable for image tag
-    image: ${FRONTEND_IMAGE:-codebuddha/shillers-frontend:latest}
+    image: ${FRONTEND_IMAGE:-PLACEHOLDER}
     volumes: []
     restart: unless-stopped
     # Remove build section for production
@@ -37,7 +37,7 @@ services:
 
   celery_worker:
     # FIXED: Use same backend image with environment variable
-    image: ${BACKEND_IMAGE:-codebuddha/shillers-backend:latest}
+    image: ${BACKEND_IMAGE:-PLACEHOLDER}
     volumes:
       - media_volume:/app/media
     restart: unless-stopped
@@ -51,7 +51,7 @@ services:
 
   celery_beat:
     # FIXED: Use same backend image with environment variable
-    image: ${BACKEND_IMAGE:-codebuddha/shillers-backend:latest}
+    image: ${BACKEND_IMAGE:-PLACEHOLDER}
     volumes:
       - media_volume:/app/media
     restart: unless-stopped
