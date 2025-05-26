@@ -1,0 +1,361 @@
+# Fixed GitHub Actions Workflow with Enhanced Debugging
+name: Fullstack CI/CD
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [ development, master ]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - '.github/workflows/deploy-ci.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - '.github/workflows/deploy-ci.yml'
+
+jobs:
+  test:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./server
+
+    services:
+      postgres:
+        image: postgres:16.2-alpine
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7.4.3-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Check for required secrets for Test Backend
+      run: |
+        if [ -z "${{ secrets.DJANGO_SECRET_KEY }}" ]; then echo "DJANGO_SECRET_KEY secret is not set!"; exit 1; fi
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 pytest-django
+
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run Django Tests
+      run: |
+        python manage.py test
+      env:
+        SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        DEBUG: "True"
+        ALLOWED_HOSTS: "localhost,127.0.0.1"
+        CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+        DB_ENGINE: django.db.backends.postgresql
+        DB_NAME: test_db
+        DB_USER: test_user
+        DB_PASSWORD: test_password
+        DB_HOST: localhost
+        DB_PORT: 5432
+        REDIS_HOST: localhost
+        REDIS_PORT: 6379
+
+  build-backend:
+    name: Build and Push Backend Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/development' || github.ref == 'refs/heads/master')
+
+    steps:
+    - name: Check for required secrets for Backend Build and Push
+      run: |
+        if [ -z "${{ secrets.DOCKER_HUB_USERNAME }}" ]; then echo "DOCKER_HUB_USERNAME secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.DOCKER_HUB_TOKEN }}" ]; then echo "DOCKER_HUB_TOKEN secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.DJANGO_SECRET_KEY }}" ]; then echo "DJANGO_SECRET_KEY secret is not set!"; exit 1; fi
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+    # FIXED: Generate consistent tags
+    - name: Generate Docker tags
+      id: meta-backend
+      run: |
+        if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+          echo "tags=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-backend:latest,${{ secrets.DOCKER_HUB_USERNAME }}/shillers-backend:production" >> $GITHUB_OUTPUT
+        else
+          echo "tags=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-backend:development,${{ secrets.DOCKER_HUB_USERNAME }}/shillers-backend:dev-${{ github.sha }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build and push backend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./server
+        file: ./server/Dockerfile
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        target: production
+        cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-backend:buildcache
+        cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-backend:buildcache,mode=max
+
+  build-frontend:
+    name: Build and Push Frontend Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/development' || github.ref == 'refs/heads/master')
+
+    steps:
+    - name: Check for required secrets for Frontend Build and Push
+      run: |
+        if [ -z "${{ secrets.DOCKER_HUB_USERNAME }}" ]; then echo "DOCKER_HUB_USERNAME secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.DOCKER_HUB_TOKEN }}" ]; then echo "DOCKER_HUB_TOKEN secret is not set!"; exit 1; fi
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+    # FIXED: Generate consistent tags
+    - name: Generate Docker tags
+      id: meta-frontend
+      run: |
+        if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+          echo "tags=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-frontend:latest,${{ secrets.DOCKER_HUB_USERNAME }}/shillers-frontend:production" >> $GITHUB_OUTPUT
+        else
+          echo "tags=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-frontend:development,${{ secrets.DOCKER_HUB_USERNAME }}/shillers-frontend:dev-${{ github.sha }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./client
+        file: ./client/Dockerfile
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        target: production
+        cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-frontend:buildcache
+        cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/shillers-frontend:buildcache,mode=max
+        build-args: |
+          NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL || 'https://shilldao.xyz/api/v1/' }}
+          NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${{ secrets.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID }}
+
+  auto-merge:
+    name: Auto-merge development to master
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Merge development to master
+        run: |
+          git checkout master
+          git pull origin master
+          git merge origin/development --no-ff -m "Auto-merge development to master after successful build"
+          git push origin master
+
+  deploy:
+    name: Deploy to Production
+    needs: [auto-merge]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+
+    steps:
+    - name: Check for required secrets for Deploy to Production
+      run: |
+        if [ -z "${{ secrets.PROD_HOST }}" ]; then echo "PROD_HOST secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.PROD_USERNAME }}" ]; then echo "PROD_USERNAME secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.PROD_SSH_KEY }}" ]; then echo "PROD_SSH_KEY secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.DJANGO_SECRET_KEY }}" ]; then echo "DJANGO_SECRET_KEY secret is not set!"; exit 1; fi
+        if [ -z "${{ secrets.DB_PASSWORD }}" ]; then echo "DB_PASSWORD secret is not set!"; exit 1; fi
+
+    - name: Deploy to production server
+      uses: appleboy/ssh-action@master
+      env:
+        DB_NAME: ${{ vars.DB_NAME }}
+        DB_USER: ${{ vars.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        WALLETCONNECT_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID }}
+        INFURA_PROJECT_ID: ${{ secrets.INFURA_PROJECT_ID }}
+        STATE_VIEW_ADDRESS: ${{ vars.STATE_VIEW_ADDRESS }}
+        POOL_ID: ${{ vars.POOL_ID }}
+        SHILL_TOKEN_ADDRESS: ${{ vars.SHILL_TOKEN_ADDRESS }}
+        DAO_CONTRACT_ADDRESS: ${{ vars.DAO_CONTRACT_ADDRESS }}
+        TRANSFER_EVENT_SIGNATURE: ${{ vars.TRANSFER_EVENT_SIGNATURE }}
+        DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        envs: DB_NAME,DB_USER,DB_PASSWORD,CORS_ALLOWED_ORIGINS,DJANGO_SECRET_KEY,WALLETCONNECT_PROJECT_ID,INFURA_PROJECT_ID,STATE_VIEW_ADDRESS,POOL_ID,SHILL_TOKEN_ADDRESS,DAO_CONTRACT_ADDRESS,TRANSFER_EVENT_SIGNATURE,DOCKER_HUB_USERNAME,DOCKER_HUB_TOKEN
+        script: |
+          echo "=========================================="
+          echo "🚀 STARTING ENHANCED PRODUCTION DEPLOYMENT"
+          echo "=========================================="
+          echo "Timestamp: $(date)"
+          echo "Docker Hub Username: ${DOCKER_HUB_USERNAME}"
+          echo "=========================================="
+
+          # Change to deployment directory
+          cd /root/shillers || {
+            echo "❌ FAILED: Could not change to /root/shillers directory"
+            exit 1
+          }
+          echo "✅ Successfully changed to deployment directory"
+
+          # Pull latest code first to get the enhanced deployment script
+          echo "📥 Pulling latest code from master branch..."
+          git pull origin master || {
+            echo "❌ FAILED: Could not pull latest code from git"
+            echo "Git status:"
+            git status
+            echo "Git remote:"
+            git remote -v
+            exit 1
+          }
+          echo "✅ Successfully pulled latest code"
+
+          # Check if enhanced deployment script exists
+          if [ -f scripts/deploy-with-docker-fix.sh ]; then
+            echo "✅ Enhanced deployment script found"
+            echo "🚀 Running enhanced deployment script..."
+
+            # Make script executable
+            chmod +x scripts/deploy-with-docker-fix.sh
+
+            # Export environment variables for the script
+            export DB_NAME="${DB_NAME}"
+            export DB_USER="${DB_USER}"
+            export DB_PASSWORD="${DB_PASSWORD}"
+            export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS}"
+            export DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY}"
+            export WALLETCONNECT_PROJECT_ID="${WALLETCONNECT_PROJECT_ID}"
+            export INFURA_PROJECT_ID="${INFURA_PROJECT_ID}"
+            export STATE_VIEW_ADDRESS="${STATE_VIEW_ADDRESS}"
+            export POOL_ID="${POOL_ID}"
+            export SHILL_TOKEN_ADDRESS="${SHILL_TOKEN_ADDRESS}"
+            export DAO_CONTRACT_ADDRESS="${DAO_CONTRACT_ADDRESS}"
+            export TRANSFER_EVENT_SIGNATURE="${TRANSFER_EVENT_SIGNATURE}"
+            export DOCKER_HUB_USERNAME="${DOCKER_HUB_USERNAME}"
+            export DOCKER_HUB_TOKEN="${DOCKER_HUB_TOKEN}"
+
+            # Run the enhanced deployment script
+            ./scripts/deploy-with-docker-fix.sh
+          else
+            echo "❌ Enhanced deployment script not found"
+            echo "Available files in scripts directory:"
+            ls -la scripts/ || echo "Scripts directory not found"
+            echo ""
+            echo "Falling back to basic deployment..."
+
+            # Fallback to basic deployment if script is not available
+            echo "📝 Creating basic environment file..."
+            cat > .env.production << EOF
+          NODE_ENV=production
+          DEBUG=false
+          BUILD_TARGET=production
+          BACKEND_IMAGE=${DOCKER_HUB_USERNAME}/shillers-backend:development
+          FRONTEND_IMAGE=${DOCKER_HUB_USERNAME}/shillers-frontend:development
+          FRONTEND_PORT=3000
+          BACKEND_PORT=8000
+          DB_PORT=5432
+          REDIS_PORT=6379
+          DB_NAME=${DB_NAME}
+          DB_USER=${DB_USER}
+          DB_PASSWORD=${DB_PASSWORD}
+          DB_HOST=db
+          REDIS_HOST=redis
+          ALLOWED_HOSTS=shilldao.xyz,134.209.95.65
+          CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+          NEXT_PUBLIC_API_BASE_URL=https://shilldao.xyz/api/v1/
+          NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${WALLETCONNECT_PROJECT_ID}
+          SECRET_KEY=${DJANGO_SECRET_KEY}
+          INFURA_PROJECT_ID=${INFURA_PROJECT_ID}
+          STATE_VIEW_ADDRESS=${STATE_VIEW_ADDRESS:-"0xe1dd9c3fa50edb962e442f60dfbc432e24537e4c"}
+          POOL_ID=${POOL_ID:-"0xdcb7fb4f33aec4a3a9708e1634e53c30ba51d01fd78bd04693a11d5a02c0cd52"}
+          SHILL_TOKEN_ADDRESS=${SHILL_TOKEN_ADDRESS:-"0x652159c7f62e9c1613476ca600f3b591dbfc920e"}
+          DAO_CONTRACT_ADDRESS=${DAO_CONTRACT_ADDRESS:-"0xE5FE82ec6482d0291f22B5269eDBC4a046eEA763"}
+          TRANSFER_EVENT_SIGNATURE=${TRANSFER_EVENT_SIGNATURE:-"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+          EOF
+
+            echo "🐳 Basic Docker deployment..."
+            docker system prune -af || true
+            docker pull ${DOCKER_HUB_USERNAME}/shillers-backend:development || exit 1
+            docker pull ${DOCKER_HUB_USERNAME}/shillers-frontend:development || exit 1
+
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production down || true
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d || exit 1
+
+            sleep 15
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production ps
+
+            rm -f .env.production
+            echo "✅ Basic deployment completed"
+          fi
+
+          echo "=========================================="
+          echo "🎉 DEPLOYMENT PROCESS COMPLETED!"
+          echo "=========================================="
+          echo "Timestamp: $(date)"
+          echo "Application should be accessible at https://shilldao.xyz"
+          echo "=========================================="

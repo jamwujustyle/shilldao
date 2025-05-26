@@ -1,0 +1,80 @@
+# docker-compose.prod.yml - FIXED VERSION
+services:
+  backend:
+    # FIXED: Use environment variable for image tag
+    image: ${BACKEND_IMAGE:-codebuddha/shillers-backend:latest}
+    command: >
+      sh -c "
+            /venv/bin/python manage.py wait_for_db &&
+            /venv/bin/python manage.py migrate &&
+            /venv/bin/python manage.py migrate django_celery_beat &&
+            /venv/bin/python manage.py create_periodic_task &&
+            echo 'Starting production server...' &&
+            gunicorn app.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120"
+    volumes:
+      - media_volume:/app/media
+    restart: unless-stopped
+    # Remove build section for production
+    env_file:
+      - ./environments/.env.prod
+    environment:
+      - NODE_ENV=production
+      - DEBUG=false
+      - BUILD_TARGET=production
+
+  frontend:
+    # FIXED: Use environment variable for image tag
+    image: ${FRONTEND_IMAGE:-codebuddha/shillers-frontend:latest}
+    volumes: []
+    restart: unless-stopped
+    # Remove build section for production
+    env_file:
+      - ./environments/.env.prod
+    environment:
+      - NODE_ENV=production
+      - DEBUG=false
+      - BUILD_TARGET=production
+
+  celery_worker:
+    # FIXED: Use same backend image with environment variable
+    image: ${BACKEND_IMAGE:-codebuddha/shillers-backend:latest}
+    volumes:
+      - media_volume:/app/media
+    restart: unless-stopped
+    env_file: # Added for consistency
+      - ./environments/.env.prod
+    environment: # Ensure production specific envs are also here if needed, or rely on .env.prod
+      - NODE_ENV=production
+      - DEBUG=false
+      - BUILD_TARGET=production
+    # Remove build section for production
+
+  celery_beat:
+    # FIXED: Use same backend image with environment variable
+    image: ${BACKEND_IMAGE:-codebuddha/shillers-backend:latest}
+    volumes:
+      - media_volume:/app/media
+    restart: unless-stopped
+    env_file: # Added for consistency
+      - ./environments/.env.prod
+    environment: # Ensure production specific envs are also here if needed, or rely on .env.prod
+      - NODE_ENV=production
+      - DEBUG=false
+      - BUILD_TARGET=production
+    # Remove build section for production
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.nginx
+    container_name: shillers_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - media_volume:/app/media:ro
+      - ./nginx/static:/usr/share/nginx/html/static:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped

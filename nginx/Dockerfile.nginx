@@ -1,0 +1,17 @@
+FROM nginx:1.25-alpine
+
+RUN rm /etc/nginx/conf.d/default.conf
+
+# Create cache directories for static and API caching
+RUN mkdir -p /var/cache/nginx/static_cache \
+    && mkdir -p /var/cache/nginx/api_cache \
+    && chown -R nginx:nginx /var/cache/nginx
+
+COPY ./conf.d/default.conf /etc/nginx/conf.d/
+COPY ./proxy_params /etc/nginx/
+COPY ./certs/origin-cert.pem /etc/nginx/certs/
+COPY ./certs/origin-key.pem /etc/nginx/certs/
+
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]

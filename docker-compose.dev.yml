@@ -1,0 +1,54 @@
+# Development overrides
+services:
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"  # Only expose Redis in development
+
+  backend:
+    build:
+      target: development
+    command: >
+      sh -c "
+            /venv/bin/python manage.py wait_for_db &&
+            /venv/bin/python manage.py makemigrations &&
+            /venv/bin/python manage.py migrate &&
+            /venv/bin/python manage.py migrate django_celery_beat &&
+            echo 'Creating periodic tasks...' &&
+            /venv/bin/python manage.py create_periodic_task &&
+            echo 'Starting development server with hot reload...' &&
+            /venv/bin/python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - media_volume:/app/media
+    env_file:
+      - ./environments/.env.dev
+    environment:
+      DEBUG: "true"
+      PYTHONUNBUFFERED: "1"
+      WATCHDOG_ENABLED: "true"  # Enable Django's auto-reloader
+
+  frontend:
+    build:
+      target: development
+    command: sh -c "yarn dev"
+    volumes:
+      - /app/node_modules
+      - /app/.next
+    env_file:
+      - ./environments/.env.dev
+    environment:
+      NODE_ENV: development
+      FAST_REFRESH: "true"  # Enable Next.js fast refresh
+    stdin_open: true
+    tty: true
+
+  celery_worker:
+    build:
+      target: development
+    env_file:
+      - ./environments/.env.dev
+
+  celery_beat:
+    build:
+      target: development
+    env_file:
+      - ./environments/.env.dev
