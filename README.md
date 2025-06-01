@@ -99,23 +99,27 @@ run start-dev.sh script to start all containers
 </details>
 
 
+📂 Project Structure
 shilldao/
-├── client/                      # Next.js frontend application
-│   ├── components/              # Reusable React components
+├── 📁 client/                    # Next.js frontend application
+│   ├── components/               # Reusable React components
 │   ├── pages/                   # Next.js pages and API routes
 │   ├── styles/                  # Tailwind CSS styles
 │   └── utils/                   # Utility functions and helpers
-├── server/                      # Django backend application
+├── 📁 server/                   # Django backend application
 │   ├── apps/                    # Django applications
 │   ├── config/                  # Django settings and configuration
 │   ├── static/                  # Static files
 │   └── media/                   # User uploaded files
-├── nginx/                       # Nginx configuration files
-├── scripts/                     # Deployment and utility scripts
-├── docker-compose.yml           # Main Docker Compose configuration
-├── docker-compose.dev.yml       # Development environment
-├── docker-compose.prod.yml      # Production environment
-└── DEPLOYMENT_FIX_SUMMARY.md    # Deployment documentation
+├── 📁 nginx/                    # Nginx configuration files
+├── 📁 scripts/                  # Deployment and utility scripts
+├── 🐳 docker-compose.yml        # Main Docker Compose configuration
+├── 🐳 docker-compose.dev.yml    # Development environment
+├── 🐳 docker-compose.prod.yml   # Production environment
+└── 📋 DEPLOYMENT_FIX_SUMMARY.md # Deployment documentation
+  this is in my readme but github shows it messy. can we make it proper?
+
+Edit
 
 🌍 Environment Variables
 <details>
