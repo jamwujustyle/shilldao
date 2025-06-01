@@ -99,7 +99,6 @@ run start-dev.sh script to start all containers
 </details>
 
 
-📂 Project Structure
 shilldao/
 ├── client/                      # Next.js frontend application
 │   ├── components/              # Reusable React components
